@@ -27,6 +27,30 @@ def runGame(gameState: GameState): (Board, Int) = {
     }
 }
 
+def makeBadMove(gameState: GameState): (Option[Board], Int, GameState) = {
+    val numToMark = gameState.gameOrder.head
+    def markBoardVal(pos: (Int,Marked)) = if (pos._1 == numToMark) (pos._1, true) else pos
+    val markedBoards = gameState
+        .boards
+        .map(_.map(_.map(markBoardVal)))
+    val winningBoard = markedBoards.find(hasWon)
+    val unwonBoards = markedBoards.filterNot(hasWon)
+    // If this is the last board return it
+    if (!winningBoard.isEmpty && unwonBoards.length == 0) {
+        return (winningBoard, numToMark, GameState(gameState.gameOrder.tail, unwonBoards))
+    } 
+
+    return (Option.empty, numToMark, GameState(gameState.gameOrder.tail, unwonBoards))
+}
+
+def runBadGame(gameState: GameState): (Board, Int) = {
+    val (winner, numToMark, newState) = makeBadMove(gameState)
+    if (winner.isEmpty) {
+        return runBadGame(newState)
+    } else {
+        return (winner.get, numToMark)
+    }
+}
 
 def getInitGameState(filename: String): GameState = {
     def getGameOrder(line: String): GameOrder = line.split(",").map(_.filter(_ >= ' ').toInt).toList
@@ -98,4 +122,6 @@ def runTests = {
     runTests
     val initialGameState = getInitGameState("input.txt")
     println((runGame andThen calcWinningScore)(initialGameState))
+    println((runBadGame andThen calcWinningScore)(initialGameState))
+
 }
