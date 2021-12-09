@@ -1,12 +1,42 @@
 import scala.io.Source
+import math.Ordered.orderingToOrdered
+
 type Point = (Int, Int)
 case class Line(
     start: Point,
     end: Point
 )
 
+case class LineEquation (
+    gradient: Int,
+    constant: Int,
+)
+
+def getLineEquation(line: Line): LineEquation = {
+    val gradient = (line.end._2 - line.start._2) / (line.end._1 - line.start._1)
+    val constant = line.start._2 - gradient * line.start._1
+    return LineEquation(gradient, constant)
+}
+
+def pointOnLineEquation(lineEquation: LineEquation, point: Point): Boolean = {
+    val y = lineEquation.gradient * point._1 + lineEquation.constant
+    return y == point._2
+}
+
+def getYCoord(lineEquation: LineEquation, x: Int): Int = {
+    return (lineEquation.gradient * x + lineEquation.constant)
+}
+
+def getXCoord(lineEquation: LineEquation, y: Int): Int = {
+    return (y - lineEquation.constant) / lineEquation.gradient
+}
+
 def inHorizontalRange(line: Line, point: Point): Boolean = (line.start._1 == point._1) && line.start._2 <= point._2 && point._2 <= line.end._2
 def inVerticalRange(line: Line, point: Point): Boolean =  (line.start._2 == point._2) && line.start._1 <= point._1 && point._1 <= line.end._1
+def inDiagonalRange(line: Line, point: Point): Boolean = {
+    val lineEquation = getLineEquation(line)
+    return pointOnLineEquation(lineEquation, point) && line.start <= point && point <= line.end
+}
 
 def isHorizontal(line: Line): Boolean = line.start._1 == line.end._1
 def isVertical(line: Line): Boolean = line.start._2 == line.end._2
@@ -24,6 +54,16 @@ def genVerticalPoints(line1: Line, line2: Line, startPoint: Point): Set[Point] =
         x <- startPoint._1 until line1.end._1.min(line2.end._1) + 1
     ) yield (x, startPoint._2)
     return points.toSet
+}
+
+def genDiagonalPoints(lineEquation: LineEquation, line1: Line, line2: Line, startPoint: Point): Set[Point] = {
+    // val points = for (
+    //     x <- startPoint._1 until line1.end._1.min(line2.end._1) + 1;
+    //     y <- startPoint._2 until line2.end._2.min(line1.end._2) + 1
+    // ) yield (x, y)
+    val xCoords = List.range(startPoint._1,  line1.end._1.min(line2.end._1) + 1)
+    val coords = xCoords.map((x) => (x,getYCoord(lineEquation, x)))
+    return coords.toSet
 }
 
 def genHorizontalAndVerticalPoints(horizontal: Line, vertical: Line): Set[Point] = {
@@ -63,11 +103,68 @@ def testOverlappingPoints() = {
     println("Vertical Tests Complete")
     println("Begin Horizontal + Vertical Tests")
     runOverlappingTest(Line((0,0),(3,0)), Line((1,1),(1,3)), Set())
-    runOverlappingTest(Line((0,0),(3,0)), Line((1,1),(1,3)), Set())
     println("Horizontal + Vertical Tests Complete")
+    println("Begin Horizontal + Diagonal Tests")
+    runOverlappingTest(Line((0,0), (5,5)), Line((1,1), (1,5)), Set((1,1)))
+    runOverlappingTest(Line((-5,-5), (0,0)), Line((1,1), (1,5)), Set())
+    println("Horizontal + Diagonal Tests Complete")
+    println("Begin Diagonal + Diagonal Tests")
+    runOverlappingTest(Line((0,0), (5,5)), Line((1,1), (2,2)), Set((1,1),(2,2)))
+    runOverlappingTest(Line((0,0), (5,-5)), Line((1,-1), (2,-2)), Set((1,-1),(2,-2)))
+    println("Diagonal + Diagonal Tests Complete")
+}
+
+def getOverlappingPointDiagonalAndNonDiagonal(diagonal: Line, nonDiagonal: Line): Set[Point] = {
+    val lineEquation = getLineEquation(diagonal)
+
+    if (isHorizontal(nonDiagonal)) {
+        val intersectionPoint = (nonDiagonal.start._1, getYCoord(lineEquation, nonDiagonal.start._1))
+        return if (inHorizontalRange(nonDiagonal, intersectionPoint) && inDiagonalRange(diagonal, intersectionPoint)) Set(intersectionPoint) else Set()
+    } else {
+        // Vertical
+        val intersectionPoint = (getXCoord(lineEquation, nonDiagonal.start._2), nonDiagonal.start._2)
+        return if (inVerticalRange(nonDiagonal, intersectionPoint) && inDiagonalRange(diagonal, intersectionPoint)) Set(intersectionPoint) else Set()
+    }
+}
+
+def calcDiagonalsIntersectionXCoord(lineEquation1: LineEquation, lineEquation2: LineEquation): Int = {
+    if ((lineEquation2.gradient - lineEquation1.gradient) == 0) {
+        return 0
+    }
+    return (lineEquation1.constant - lineEquation2.constant) / (lineEquation2.gradient - lineEquation1.gradient)
 }
 
 def getOverlappingPoints(line1: Line, line2: Line): Set[Point] = {
+    (isDiagonal(line1), isDiagonal(line2)) match {
+        case(false, false) => getOverlappingPointsNoDiagonal(line1, line2)
+        case(true, false) => getOverlappingPointDiagonalAndNonDiagonal(line1, line2)
+        case (false, true) => getOverlappingPointDiagonalAndNonDiagonal(line2, line1)
+        case (true, true) => {
+            val lineEquation1 = getLineEquation(line1)
+            val lineEquation2 = getLineEquation(line2)
+            val direction1 = lineEquation1.gradient > 0
+            val direction2 = lineEquation2.gradient > 0;
+            if (direction1 != direction2) {
+                val xIntersect = calcDiagonalsIntersectionXCoord(lineEquation1, lineEquation2)
+                val y1 = getYCoord(lineEquation1, xIntersect)
+                val y2 = getYCoord(lineEquation2, xIntersect)
+                val intersectionPoint = (xIntersect, y1)
+                return if (y1 == y2 && inDiagonalRange(line1, intersectionPoint) && inDiagonalRange(line2, intersectionPoint)) Set((xIntersect, y1)) else Set()
+            } else {
+                if (inDiagonalRange(line1, line2.start)) {
+                    return genDiagonalPoints(lineEquation1, line1, line2, line2.start)
+                } else if (inDiagonalRange(line2, line1.start)) {
+                    return genDiagonalPoints(lineEquation1, line1, line2, line1.start)
+                } else {
+                    return Set()
+                }
+            }
+            
+        }
+    }
+}
+
+def getOverlappingPointsNoDiagonal(line1: Line, line2: Line): Set[Point] = {
     (isHorizontal(line1), isHorizontal(line2)) match {
         case (true, true) => {
             if (inHorizontalRange(line1, line2.start)) {
@@ -97,8 +194,7 @@ def getOverlappingPoints(line1: Line, line2: Line): Set[Point] = {
     }
 }
 
-// Assume all lines are horizontal and vertical
-def countOverlappingPointsPart1(lines: List[Line]): Int = {
+def countOverlappingPoints(lines: List[Line]): Int = {
     val linePairs = for {
         l1 <- lines
         l2 <- lines if l1 != l2
@@ -129,5 +225,7 @@ def getLinesFromFile(filename: String): List[Line] = {
     val filename = "input.txt"
     val lines = getLinesFromFile(filename)
     // Filter out diagonal lines
-    println(countOverlappingPointsPart1(lines.filterNot(isDiagonal)))
+    println(countOverlappingPoints(lines.filterNot(isDiagonal)))
+    println(countOverlappingPoints(lines))
+
 }
