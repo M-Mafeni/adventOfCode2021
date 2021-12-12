@@ -40,6 +40,15 @@ def runStep(grid: Grid): (Int, Grid) = {
     (flashNo, afterFlashes)
 }
 
+def allFlash(grid: Grid): Boolean = grid.forall(row => row.forall(_ == 0))
+def getStepAllFlashHelper(grid: Grid, steps: Int): Int = {
+    val (_, nextGrid) = runStep(grid)
+    if allFlash(nextGrid) then steps + 1 else getStepAllFlashHelper(nextGrid, steps + 1)
+}
+
+// Given the grid return the no of flashes that occured + a new grid
+def getStepAllFlash(grid: Grid): Int = getStepAllFlashHelper(grid, 0)
+
 def runStepsHelper(steps: Int, grid: Grid, flashTotal: Int): Int = {
     val (flashes, nextGrid) = runStep(grid)
     if (steps == 0) {
@@ -58,4 +67,5 @@ def prettyGrid(grid: Grid): String = "\n" + grid.map(row => row.map(value => ('0
 @main def main = {
     val grid = toGrid(Source.fromFile("input.txt").getLines.toList)
     println(runSteps(100, grid))
+    println(getStepAllFlash(grid))
 }
