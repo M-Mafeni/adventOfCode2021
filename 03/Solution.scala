@@ -65,6 +65,6 @@ def calcPowerConsumption: List[List[Char]] => Int = calcGammaAndEpsilon andThen 
 @main def main = {
     val filename = "input.txt"
     val binaryStrings: List[List[Char]] = Source.fromFile(filename).getLines.toList.map(_.toList)
-    println(calcPowerConsumption1(binaryStrings))
+    println(calcPowerConsumption(binaryStrings))
     println(calcLifeSupport(binaryStrings))
 }
