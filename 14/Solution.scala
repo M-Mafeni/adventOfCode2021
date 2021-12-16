@@ -1,51 +1,49 @@
 import scala.io.Source
-type Template = String
-
+import scala.math.BigDecimal.RoundingMode
+type Pair = String
+type Template = Map[Pair, Long]
+type Head = String
+type Tail = String
 type Rules = Map[String, Char]
 
-def genPairs(value: String): List[(Char, Char)] = {
+def genPairs(value: String): List[String] = {
     val pairs = for {
         i <- 0 until value.length - 1
-    } yield (value.charAt(i),value.charAt(i + 1))
+    } yield value.substring(i, i + 2)
     pairs.toList
 }
 
-def makeNewString(newPairs: List[(Char, Option[Char], Char)]): String = {
-    def fromInsertion3n(insertion: (Char, Option[Char], Char)) = insertion._2 match {
-        case None => List(insertion._1, insertion._3).mkString
-        case Some(c) => List(insertion._1, c, insertion._3).mkString
-    }
-
-    def fromInsertion2n(insertion: (Option[Char], Char)) = insertion._1 match {
-        case None => insertion._2.toString
-        case Some(c) => List(c, insertion._2).mkString
-    }
-
-    def reducer(acc: String, insertion: (Char, Option[Char], Char)) = {
-        val (a, optional, b) = insertion
-        acc + fromInsertion2n((optional, b))
-    }
-    newPairs.tail.foldLeft(fromInsertion3n(newPairs.head))(reducer)
-}
-
 def runStep(template: Template, rules: Rules): Template = {
-    val pairs = genPairs(template)
-    def updatePair(pair: (Char,Char)): (Char, Option[Char], Char) = {
-        val (a, b) = pair
-        val key = List(a, b).mkString
+    def updateMap(acc: Template, key: String) = {
+        // Check Key is mapped to rule
         val insertion = rules.get(key)
-        (a, insertion, b)
+        val currCount = template.getOrElse(key, 0l)
+        if (insertion.isEmpty) {
+            acc.updatedWith(key)(_.map(_ + currCount).orElse(Some(currCount)))
+        } else {
+            val (a, b) = (key.charAt(0), key.charAt(1))
+            val (k1, k2) = (List(a, insertion.get).mkString, List(insertion.get, b).mkString)
+            acc
+                .updatedWith(k1)(_.map(_ + currCount).orElse(Some(currCount)))
+                .updatedWith(k2)(_.map(_ + currCount).orElse(Some(currCount)))
+        }
     }
-    
-    makeNewString(pairs.map(updatePair))
+    template.keySet.foldLeft(Map.empty)(updateMap)
 }
 
-def runStepsHelper(template: Template, rules: Rules, noOfSteps: Int): Template = noOfSteps match {
-    case 0 => template
-    case n => runStepsHelper(runStep(template, rules), rules, n - 1)
-}
-def runSteps(template: Template, rules: Rules, steps: Int) = {
-    runStepsHelper(template, rules, steps)
+def runSteps(template: Template, rules: Rules, steps: Int): Template= steps match {
+        case 0 => template
+        case n => {
+            runSteps(runStep(template, rules), rules, n - 1)
+        }
+    }
+
+def makeTemplate(value: String): Template = {
+    val pairs =  genPairs(value)
+    def updateTemplate(acc: Template, pair: String): Template = {
+        acc.updatedWith(pair)(_.map(_ + 1l).orElse(Some(1l)))
+    }
+    pairs.foldLeft(Map.empty)(updateTemplate)
 }
 
 def toTemplateAndRules(text: String): (Template, Rules) = {
@@ -56,19 +54,43 @@ def toTemplateAndRules(text: String): (Template, Rules) = {
         (pair, insertion)
     }
     val chunks = text.split("\n\r")
-    val template = chunks.head.trim
+    val template = makeTemplate(chunks.head.trim)
     val rules = chunks.tail.head.split("\r").map(makeRule).toMap
     (template, rules)
 }
 
-def calcPart1(template: Template, rules: Rules): Int = {
-    val finalString = runSteps(template, rules, 10)
-    val groups = finalString.toList.groupBy(identity).view.mapValues(_.length).toList.map(_._2)
-    groups.max - groups.min
+def makeCharMap(template: Template): Map[Char, BigInt] = {
+    def reducer(acc: Map[Char, BigDecimal], pair: String) = {
+        val count = BigDecimal(template.getOrElse(pair, 0l))
+        acc
+            .updatedWith(pair.charAt(0))(_.map(_ + count).orElse(Some(count)))
+            .updatedWith(pair.charAt(1))(_.map(_ + count).orElse(Some(count)))
+    }
+    template.keySet.foldLeft(Map.empty)(reducer).map( (k, v) => (k, (v/BigDecimal(2.0)).setScale(0, RoundingMode.CEILING).toBigInt))
+}
+
+def calcSolution(template: Template, rules: Rules, steps: Int) = {
+    val finalTemplate = runSteps(template, rules, steps)
+    val finalCharMap = makeCharMap(finalTemplate)
+    val maxGroup = finalCharMap.maxBy(_._2)._2
+    val minGroup = finalCharMap.minBy(_._2)._2
+    maxGroup - minGroup
+}
+
+def calcPart1(template: Template, rules: Rules): BigInt = {
+    calcSolution(template, rules, 10)
+}
+
+def calcPart2(template: Template, rules: Rules): BigInt = {
+    calcSolution(template, rules, 40)
 }
 
 @main def main = {
     val text = Source.fromFile("input.txt").mkString
     val (template, rules) = toTemplateAndRules(text)
-    println(calcPart1(template, rules))
+    val t0 = System.nanoTime()
+    val ans = calcPart2(template, rules)
+    val t1 = System.nanoTime()
+    println(ans)
+    println(s"Runtime: ${(t1 - t0)/ 1000000}ms")
 }
