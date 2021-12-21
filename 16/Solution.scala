@@ -19,7 +19,7 @@ type Bin = String
 type Packet = LiteralPacket | OperatorPacket
 case class LiteralPacket (
     version: Int,
-    value: Int
+    value: BigInt
 )
 enum LengthTypeID :
     case FifteenBit, ElevenBit
@@ -31,16 +31,16 @@ case class OperatorPacket (
     subPackets: List[Packet]
 )
 
-def binToInt(bin: Bin): Int = {
+def binToBigInt(bin: Bin): BigInt = {
     val exp = bin.length - 1
-    def reducer(acc: (Int, Int), bit: Char) = {
+    def reducer(acc: (Int, BigInt), bit: Char) = {
         val (exp, value) = acc
         bit match {
             case '0' => (exp - 1, value)
-            case '1' => (exp - 1, value + pow(2, exp).toInt)
+            case '1' => (exp - 1, value + (BigInt(2) pow exp))
         }
     }
-    bin.toList.foldLeft((exp, 0))(reducer)._2
+    bin.toList.foldLeft((exp, BigInt(0)))(reducer)._2
 }
 def hexToBin(hex: Hex): Bin = {
     def hexBitToBinary(c: Char): Bin = c match {
@@ -112,12 +112,12 @@ def parsePacketHelper(packetState: PacketState): (Packet, PacketState) = {
     val bits = packetState.bits
     val (header, remainingBits) = bits.splitAt(6)
     val (packetBits, versionBits) = header.splitAt(3)
-    val version = binToInt(packetBits)
-    val packetId = binToInt(versionBits)
+    val version = binToBigInt(packetBits).toInt
+    val packetId = binToBigInt(versionBits).toInt
     packetId match {
         case 4 => {
             val (bins, litValBinState) = getSubBinsState(LitValState(remainingBits, false, 0))
-            val value = binToInt(bins.map(_.tail).mkString)
+            val value = binToBigInt(bins.map(_.tail).mkString)
             val bitsProcessed = packetState.bitsProcessed + litValBinState.bitsProcessed + 6
             (LiteralPacket(version, value), PacketState(litValBinState.bits, bitsProcessed))
         }
@@ -127,14 +127,14 @@ def parsePacketHelper(packetState: PacketState): (Packet, PacketState) = {
             lengthTypeMode match {
                 case LengthTypeID.FifteenBit => {
                     val (bitsNeededForParseVal, newRemainderForBits) = remainingBits.tail.splitAt(15)
-                    val parseVal = binToInt(bitsNeededForParseVal)
+                    val parseVal = binToBigInt(bitsNeededForParseVal).toInt
                     val (subPackets, subPacketsState) = runSubPacketsFifteenBitState(PacketState(newRemainderForBits, 0), parseVal, List())
                     val bitsProcessed = packetState.bitsProcessed + subPacketsState.bitsProcessed + 22
                     (OperatorPacket(packetId, version, lengthTypeMode, subPackets), PacketState(subPacketsState.bits, bitsProcessed))
                 }
                 case LengthTypeID.ElevenBit => {
                     val (bitsNeededForParseVal, newRemainderForBits) = remainingBits.tail.splitAt(11)
-                    val parseVal = binToInt(bitsNeededForParseVal)
+                    val parseVal = binToBigInt(bitsNeededForParseVal).toInt
                     val (subPackets, subPacketsState) = runSubPacketsElevenBitState(PacketState(newRemainderForBits, 0), parseVal, List())
                     val bitsProcessed = packetState.bitsProcessed + subPacketsState.bitsProcessed + 18
                     (OperatorPacket(packetId, version, lengthTypeMode, subPackets), PacketState(subPacketsState.bits, bitsProcessed))
@@ -150,6 +150,34 @@ def versionSum(packet: Packet): Int = packet match {
 }
 def parsePacket(hex: Hex): Packet = parsePacketHelper(PacketState(hexToBin(hex), 0))._1
 
+def evalPacket(packet: Packet): BigInt = packet match {
+    case LiteralPacket(_, value) => value
+    case OperatorPacket(id, _, _, subPackets) => {
+        val values = subPackets.map(evalPacket)
+        id match {
+            case 0 => values.sum
+            case 1 => values.product
+            case 2 => values.min
+            case 3 => values.max
+            case 5 => {
+                val List(a, b) = values
+                if a > b then BigInt(1) else BigInt(0)
+            }
+            case 6 => {
+                val List(a, b) = values
+                if a < b then BigInt(1) else BigInt(0)
+            }
+            case 7 => {
+                val List(a, b) = values
+                if a == b then BigInt(1) else BigInt(0)
+            }
+
+        }
+    } 
+}
+
+def evalPacketHex = parsePacket andThen evalPacket
+
 def runExamples = {
     println(parsePacket("D2FE28"))
     println(parsePacket("38006F45291200"))
@@ -160,8 +188,22 @@ def runExamples = {
     println(versionSumHex("A0016C880162017C3686B18A3D4780"))
 }
 
+def runExamples2 = {
+    println(evalPacketHex("C200B40A82"))
+    println(evalPacketHex("04005AC33890"))
+    println(evalPacketHex("880086C3E88112"))
+    println(evalPacketHex("CE00C43D881120"))
+    println(evalPacketHex("D8005AC2A8F0"))
+    println(evalPacketHex("F600BC2D8F"))
+    println(evalPacketHex("9C005AC2F8F0"))
+    println(evalPacketHex("9C0141080250320F1802104A08"))
+}
+
 def versionSumHex = parsePacket andThen versionSum
 @main def main = {
+    // CUrr answer = 9964787350
     val hex = Source.fromFile("input.txt").mkString
-    println(versionSumHex(hex))
+    val packet = parsePacket(hex)
+    println(versionSum(packet))
+    println(evalPacket(packet))
 }
